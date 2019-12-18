@@ -1,0 +1,86 @@
+library("e1071")
+library(pROC)
+library(ggplot2) 
+
+setwd("C:/Users/61077/Desktop/early-stage malignant vs. benign/SVM")
+train <- read_sav("training.sav")
+test <- read_sav("testing.sav")
+
+setwd("C:/Users/61077/Desktop/early-stage malignant vs. benign/SVM-CA125")
+train <- read_sav("training125.sav")
+test <- read_sav("testing125.sav")
+
+
+# load training and testing data
+x_train <- cbind(array(train[["SSF0entropy"]], dim = c(155,1)), 
+                 array(train[["SSF0mpp"]], dim = c(155,1)), 
+                 array(train[["age"]], dim = c(155,1))
+                 ,array(train[["CA125"]], dim = c(155,1))
+                 )
+y_train <- array(train[["MorB"]], dim = c(155,1))
+
+x_test <- cbind(array(test[["SSF0entropy"]], dim = c(77,1)), 
+                array(test[["SSF0mpp"]], dim = c(77,1)),
+                array(test[["age"]], dim = c(77,1))
+                ,array(test[["CA125"]], dim = c(77,1))
+                )
+y_test <- array(test[["MorB"]], dim = c(77,1))
+
+# load training and testing data excluding cases without CA125
+x_train <- cbind(array(train[["SSF0entropy"]], dim = c(135,1)), 
+                 array(train[["SSF0mpp"]],dim = c(135,1)),
+                 array(train[["age"]], dim = c(135,1)), 
+                 array(train[["CA125"]], dim = c(135,1)))
+y_train <- array(train[["MorB"]], dim = c(135,1))
+
+x_test <- cbind(array(test[["SSF0entropy"]], dim = c(67,1)), 
+                array(test[["SSF0mpp"]], dim = c(67,1)), 
+                array(test[["age"]], dim = c(67,1)),
+                array(test[["CA125"]], dim = c(67,1)))
+y_test <- array(test[["MorB"]], dim = c(67,1))
+
+# build model and predict
+# define k-folder cross validation in cross
+model <- svm(x_train, y_train, probability=TRUE, cross=10)
+y_pred <- predict(model, x_test, probability=TRUE)
+y_pred_train <- predict(model, x_train, probability=TRUE)
+
+# confusing matrix on testing set
+model2 <-svm(as.factor(MorB) ~ SSF0entropy + SSF0mpp +age+CA125,data = training125, probability = FALSE)
+#moedl2 <-svm(x_train, y_train,probablity = FALSE, cross = 10)
+pred_result <-predict(model2,x_test)
+table(pred_result,y_test)
+
+# confusing matrix on training set
+pred_result_train <-predict(model2,x_train)
+table(pred_result_train, y_train)
+
+# Calculate auc on testing set
+model_roc <- roc(y_test ~ y_pred,ci=TRUE)
+model_roc
+model_auc <- model_roc$auc
+model_ci <- model_roc$ci
+
+# Calculate auc on training set
+model_roc_train<-roc(y_train~y_pred_train, ci=TRUE)
+model_roc_train
+model_auc_train <- model_roc_train$auc
+model_ci_train <- model_roc_train$ci
+
+# Plot roc curve for testing set
+ciobj<-ci.se(model_roc, specificities=seq(0,1,l=25))
+dat.ci<-data.frame(x = as.numeric(rownames(ciobj)),
+                   lower = ciobj[,1],
+                   upper = ciobj[,3])
+ggroc(model_roc)+theme_minimal()+geom_abline(slope=1, intercept = 1, linetype = "dashed", alpha=0.7, color = "grey") + 
+  coord_equal() + geom_ribbon(data = dat.ci, aes(x = x, ymin = lower, ymax = upper), fill = "steelblue", alpha= 0.2) + 
+  ggtitle("ROC curve with 95% CI for testing set")
+
+# Plot roc curve for training set
+ciobj<-ci.se(model_roc_train, specificities=seq(0,1,l=25))
+dat.ci<-data.frame(x = as.numeric(rownames(ciobj)),
+                   lower = ciobj[,1],
+                   upper = ciobj[,3])
+ggroc(model_roc_train)+theme_minimal()+geom_abline(slope=1, intercept = 1, linetype = "dashed", alpha=0.7, color = "grey") + 
+  coord_equal() + geom_ribbon(data = dat.ci, aes(x = x, ymin = lower, ymax = upper), fill = "steelblue", alpha= 0.2) + 
+  ggtitle("ROC curve with 95% CI for training set")
